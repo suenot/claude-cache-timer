@@ -18,9 +18,9 @@ The 1-hour TTL is a constant (`TTL_MS`) in `hooks/register.tsx`. Set it to
 
 ## Keep warm button
 
-The band has a **Keep warm 3h** button. While it is on, the mod checks every
-30 seconds; when the cache is 50 minutes old and no turn is running, it sends
-one tool-less fork over the session transcript (`$.model.fork`), which reads
+The band has a **Keep warm 3h** button. While it is on, the mod sets a single timer for the
+moment the cache is 50 minutes old (no polling; the timer is reset after every
+turn). If no turn is running then, it sends one tool-less fork over the session transcript (`$.model.fork`), which reads
 the cached prefix and so restarts the 1-hour lifetime. The band then shows
 `keeping warm until HH:MM (N pings)` and the button becomes **Stop warming**.
 

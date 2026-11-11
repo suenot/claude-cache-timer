@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface as Engine, Register } from 'claude-code'
 
 const TTL_MS = 60 * 60 * 1000 // prompt cache lifetime (1h)
 const WARN_MS = 10 * 60 * 1000 // band turns yellow below this
@@ -20,63 +20,88 @@ const fmt = (ms: number): string => {
 
 const clock = (ms: number): string => new Date(ms).toTimeString().slice(0, 5)
 
-export const register: Register = on => {
-  let busy = false
-  let inFlight = false
-  let fails = 0
+let busy = false
+let inFlight = false
+let fails = 0
+let timer: { cancel: () => void } | null = null
 
-  on('session.start', ($, e, next) => {
-    $.clock.every(30000, async () => {
-      const until = await read($, warmUntil)
-      const at = await read($, lastAt)
-      const now = await $.clock.now()
-      if (until === null || at === null || busy || inFlight) return
-      if (now >= until) {
+// One timer, set for the exact moment the cache is PING_AFTER_MS old.
+async function arm($: Engine, delayMs?: number): Promise<void> {
+  timer?.cancel()
+  timer = null
+  const until = await read($, warmUntil)
+  const at = await read($, lastAt)
+  const now = await $.clock.now()
+  if (until === null || at === null || busy) return
+  if (now >= until) {
+    await update($, warmUntil, () => null)
+    await update($, note, () => 'Keep warm ended')
+    return
+  }
+  const wait = delayMs ?? Math.max(0, at + PING_AFTER_MS - now)
+  timer = $.clock.after(wait, () => ping($))
+}
+
+async function ping($: Engine): Promise<void> {
+  timer = null
+  const until = await read($, warmUntil)
+  const at = await read($, lastAt)
+  const now = await $.clock.now()
+  if (until === null || at === null || busy || inFlight) return
+  if (now >= until) return arm($)
+  if (now - at < PING_AFTER_MS) return arm($)
+
+  inFlight = true
+  await update($, lastAt, () => now) // claim: no second ping meanwhile
+  try {
+    const r = await $.model.fork({ prompt: 'Reply with the single word: ok' })
+    if (!r.isAnswered) {
+      await update($, lastAt, () => at)
+      if (r.reason === 'nothing-to-fork') return
+      fails += 1
+      if (fails >= MAX_FAILS) {
         await update($, warmUntil, () => null)
-        await update($, note, () => 'Keep warm ended')
-        return
+        await update($, note, () => `Keep warm stopped: ${r.reason}`)
+      } else {
+        await arm($, 60000) // retry in a minute, still inside the 1h window
       }
-      if (now - at < PING_AFTER_MS) return
+      return
+    }
+    fails = 0
+    await update($, pings, n => n + 1)
+    const { cache_read_input_tokens: read_, cache_creation_input_tokens: wrote } = r.usage
+    if (read_ === 0 || wrote * 10 >= read_) {
+      await update($, warmUntil, () => null)
+      await update($, note, () => 'Keep warm stopped: cache was cold, ping rewrote it')
+      $.ui.toast('Keep warm stopped: cache was already cold')
+    } else {
+      await arm($)
+    }
+  } finally {
+    inFlight = false
+    $.ui.invalidate('ui.render')
+  }
+}
 
-      inFlight = true
-      await update($, lastAt, () => now) // claim: no second ping meanwhile
-      try {
-        const r = await $.model.fork({ prompt: 'Reply with the single word: ok' })
-        if (!r.isAnswered) {
-          await update($, lastAt, () => at)
-          if (r.reason === 'nothing-to-fork') return
-          fails += 1
-          if (fails >= MAX_FAILS) {
-            await update($, warmUntil, () => null)
-            await update($, note, () => `Keep warm stopped: ${r.reason}`)
-          }
-          return
-        }
-        fails = 0
-        await update($, pings, n => n + 1)
-        const { cache_read_input_tokens: read_, cache_creation_input_tokens: wrote } = r.usage
-        if (read_ === 0 || wrote * 10 >= read_) {
-          await update($, warmUntil, () => null)
-          await update($, note, () => 'Keep warm stopped: cache was cold, ping rewrote it')
-          $.ui.toast('Keep warm stopped: cache was already cold')
-        }
-      } finally {
-        inFlight = false
-        $.ui.invalidate('ui.render')
-      }
-    })
-    $.clock.every(15000, () => $.ui.invalidate('ui.render'))
+
+export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    $.clock.every(15000, () => $.ui.invalidate('ui.render')) // redraw only, no API
+    await arm($)
     return next(e)
   })
 
   on('turn.start', async ($, e, next) => {
     busy = true
+    timer?.cancel()
+    timer = null
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     busy = false
     await update($, lastAt, () => Date.now())
+    await arm($)
     return next(e)
   })
 
@@ -110,6 +135,7 @@ export const register: Register = on => {
             await update($, note, () => null)
             await update($, pings, () => 0)
             await update($, warmUntil, () => (isWarm ? null : t + WARM_WINDOW_MS))
+            await arm($)
           }}
         />
       </Box>
