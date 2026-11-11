@@ -1,10 +1,16 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-const TTL_MS = 60 * 60 * 1000
-const WARN_MS = 10 * 60 * 1000
+const TTL_MS = 60 * 60 * 1000 // prompt cache lifetime (1h)
+const WARN_MS = 10 * 60 * 1000 // band turns yellow below this
+const PING_AFTER_MS = 50 * 60 * 1000 // ping when the cache is this old
+const WARM_WINDOW_MS = 3 * 60 * 60 * 1000 // one button press keeps warm this long
+const MAX_FAILS = 3
 
 const lastAt = atom({ plugin: 'cache-timer', key: 'lastAt' } as const, null)
+const warmUntil = atom({ plugin: 'cache-timer', key: 'warmUntil' } as const, null)
+const pings = atom({ plugin: 'cache-timer', key: 'pings' } as const, 0)
+const note = atom({ plugin: 'cache-timer', key: 'note' } as const, null)
 
 const fmt = (ms: number): string => {
   const s = Math.max(0, Math.floor(ms / 1000))
@@ -12,13 +18,64 @@ const fmt = (ms: number): string => {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m ${s % 60}s`
 }
 
+const clock = (ms: number): string => new Date(ms).toTimeString().slice(0, 5)
+
 export const register: Register = on => {
+  let busy = false
+  let inFlight = false
+  let fails = 0
+
   on('session.start', ($, e, next) => {
+    $.clock.every(30000, async () => {
+      const until = await read($, warmUntil)
+      const at = await read($, lastAt)
+      const now = await $.clock.now()
+      if (until === null || at === null || busy || inFlight) return
+      if (now >= until) {
+        await update($, warmUntil, () => null)
+        await update($, note, () => 'Keep warm ended')
+        return
+      }
+      if (now - at < PING_AFTER_MS) return
+
+      inFlight = true
+      await update($, lastAt, () => now) // claim: no second ping meanwhile
+      try {
+        const r = await $.model.fork({ prompt: 'Reply with the single word: ok' })
+        if (!r.isAnswered) {
+          await update($, lastAt, () => at)
+          if (r.reason === 'nothing-to-fork') return
+          fails += 1
+          if (fails >= MAX_FAILS) {
+            await update($, warmUntil, () => null)
+            await update($, note, () => `Keep warm stopped: ${r.reason}`)
+          }
+          return
+        }
+        fails = 0
+        await update($, pings, n => n + 1)
+        const { cache_read_input_tokens: read_, cache_creation_input_tokens: wrote } = r.usage
+        if (read_ === 0 || wrote * 10 >= read_) {
+          await update($, warmUntil, () => null)
+          await update($, note, () => 'Keep warm stopped: cache was cold, ping rewrote it')
+          $.ui.toast('Keep warm stopped: cache was already cold')
+        }
+      } finally {
+        inFlight = false
+        $.ui.invalidate('ui.render')
+      }
+    })
     $.clock.every(15000, () => $.ui.invalidate('ui.render'))
     return next(e)
   })
 
+  on('turn.start', async ($, e, next) => {
+    busy = true
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
+    busy = false
     await update($, lastAt, () => Date.now())
     return next(e)
   })
@@ -27,16 +84,34 @@ export const register: Register = on => {
     const at = await read($, lastAt)
     if (e.props.hasSurvey || at === null) return next(e)
 
-    const age = (await $.clock.now()) - at
+    const now = await $.clock.now()
+    const age = now - at
     const left = TTL_MS - age
-    const { Box, Text } = $.ui.resolve(e)
+    const until = await read($, warmUntil)
+    const isWarm = until !== null && until > now
+    const count = await read($, pings)
+    const msg = await read($, note)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const color = left <= 0 ? 'error' : left < WARN_MS ? 'warning' : undefined
 
     return (
       <Box>
         <Text dimColor={color === undefined} color={color}>
           Last reply {fmt(age)} ago · {left <= 0 ? 'cache expired' : `cache ${fmt(left)} left`}
+          {isWarm ? ` · keeping warm until ${clock(until)} (${count} pings)` : ''}
+          {!isWarm && msg ? ` · ${msg}` : ''}{' '}
         </Text>
+        <Button
+          key="warm"
+          label={isWarm ? 'Stop warming' : 'Keep warm 3h'}
+          onPress={async () => {
+            const t = await $.clock.now()
+            fails = 0
+            await update($, note, () => null)
+            await update($, pings, () => 0)
+            await update($, warmUntil, () => (isWarm ? null : t + WARM_WINDOW_MS))
+          }}
+        />
       </Box>
     )
   })

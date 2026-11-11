@@ -1,7 +1,7 @@
 {
   "name": "cache-timer",
-  "version": "0.1.0",
-  "description": "Band above the prompt: time since last reply and time left before the 1h prompt cache expires",
+  "version": "0.2.0",
+  "description": "Band above the prompt: time since last reply, time left on the 1h prompt cache, and a button to keep the cache warm",
   "author": { "name": "suenot" },
   "license": "MIT",
   "types": "./types/index.d.ts"
