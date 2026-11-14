@@ -98,6 +98,17 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Every model request of the main loop reads the cached prefix and so
+  // restarts its lifetime, not only the last one of a turn. Without this the
+  // band keeps counting from the previous turn while a long turn is running.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId !== undefined) return yield* next(e)
+    const r = yield* next(e)
+    await update($, lastAt, () => Date.now())
+    $.ui.invalidate('ui.render')
+    return r
+  })
+
   on('turn.complete', async ($, e, next) => {
     busy = false
     await update($, lastAt, () => Date.now())

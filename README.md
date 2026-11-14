@@ -10,7 +10,8 @@ Last reply 12m 3s ago · cache 47m 57s left
 
 The text is dim while more than 10 minutes remain, turns to a warning color
 under 10 minutes, and to an error color with `cache expired` after one hour.
-It refreshes every 15 seconds and counts from the end of the last turn.
+It refreshes every 15 seconds and counts from the last model response, so it
+resets on every reply of a running turn, not only when the turn ends.
 It works in the open chat only; it does not change the session list.
 
 The 1-hour TTL is a constant (`TTL_MS`) in `hooks/register.tsx`. Set it to
