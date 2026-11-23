@@ -26,10 +26,14 @@ short summary instead of rewriting the whole context at full price after the
 cache expires. The band shows `auto-compact in Nm` until then and
 `Auto-compacted at HH:MM (Nk to Mk tokens)` afterwards.
 
-It runs once per idle period and is skipped while a turn runs, while Keep warm
-is on (warming wins; compaction resumes after the window ends), when the cache
-has already expired, and when the context is under 30k tokens. There is no
-setting to turn it off. The thresholds are `COMPACT_AFTER_MS` and
+It runs once per idle period: after it, nothing more happens until you write
+again, so an abandoned session is compacted at most once and never hourly. It
+is skipped while a turn runs, while Keep warm is on (warming wins; compaction
+resumes after the window ends), when the cache has already expired, and when
+the context is under 30k tokens. It is on by default; when a task is finished
+and the session will not be used again, press **Skip auto-compact** on the
+band to spend nothing on it. The skip lasts until your next message, and
+pressing **Auto-compact** undoes it. The thresholds are `COMPACT_AFTER_MS` and
 `MIN_COMPACT_TOKENS` in `hooks/register.tsx`.
 
 ## Keep warm button

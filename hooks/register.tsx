@@ -16,6 +16,8 @@ const note = atom({ plugin: 'cache-timer', key: 'note' } as const, null)
 // lastAt of the idle period already compacted (or judged too small), so one
 // idle period compacts once.
 const compactedAt = atom({ plugin: 'cache-timer', key: 'compactedAt' } as const, null)
+// The person pressed "Skip auto-compact" for this idle period.
+const compactSkipped = atom({ plugin: 'cache-timer', key: 'compactSkipped' } as const, false)
 
 const fmt = (ms: number): string => {
   const s = Math.max(0, Math.floor(ms / 1000))
@@ -151,7 +153,7 @@ export const register: Register = on => {
   // restarts its lifetime, not only the last one of a turn. Without this the
   // band keeps counting from the previous turn while a long turn is running.
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId !== undefined) return yield* next(e)
+    if (e.agentId !== undefined || inFlight) return yield* next(e)
     const r = yield* next(e)
     await update($, lastAt, () => Date.now())
     $.ui.invalidate('ui.render')
@@ -160,6 +162,8 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     busy = false
+    if (inFlight) return next(e) // our own ping or compaction, not the person
+    await update($, compactSkipped, () => false)
     await update($, lastAt, () => Date.now())
     await arm($)
     return next(e)
@@ -179,6 +183,7 @@ export const register: Register = on => {
     const done = await read($, compactedAt)
     const compactIn = at + COMPACT_AFTER_MS - now
     const willCompact = !isWarm && done !== at && left > 0
+    const skipped = await read($, compactSkipped)
     const { Box, Text, Button } = $.ui.resolve(e)
     const color = left <= 0 ? 'error' : left < WARN_MS ? 'warning' : undefined
 
@@ -202,6 +207,18 @@ export const register: Register = on => {
             await arm($)
           }}
         />
+        {willCompact || (skipped && left > 0) ? (
+          <Button
+            key="compact"
+            label={skipped ? 'Auto-compact' : 'Skip auto-compact'}
+            onPress={async () => {
+              await update($, compactSkipped, () => !skipped)
+              await update($, compactedAt, () => (skipped ? null : at))
+              await update($, note, () => (skipped ? null : 'auto-compact skipped'))
+              await arm($)
+            }}
+          />
+        ) : null}
       </Box>
     )
   })

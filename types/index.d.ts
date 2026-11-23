@@ -6,6 +6,7 @@ declare module 'claude-code' {
       pings: number
       note: string | null
       compactedAt: number | null
+      compactSkipped: boolean
     }
   }
 }
