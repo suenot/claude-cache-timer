@@ -4,7 +4,7 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 const TTL_MS = 60 * 60 * 1000 // prompt cache lifetime (1h)
 const WARN_MS = 10 * 60 * 1000 // band turns yellow below this
 const PING_AFTER_MS = 50 * 60 * 1000 // ping when the cache is this old
-const WARM_WINDOW_MS = 3 * 60 * 60 * 1000 // one button press keeps warm this long
+const WARM_HOURS = [3, 6, 12] as const // one button per keep-warm window
 const MAX_FAILS = 3
 const COMPACT_AFTER_MS = 55 * 60 * 1000 // compact while the cache is still warm
 const MIN_COMPACT_TOKENS = 30000 // smaller contexts are not worth a summary
@@ -195,18 +195,20 @@ export const register: Register = on => {
           {willCompact ? ` · ${compactIn > 0 ? `auto-compact in ${fmt(compactIn)}` : 'auto-compacting'}` : ''}
           {!isWarm && msg ? ` · ${msg}` : ''}{' '}
         </Text>
-        <Button
-          key="warm"
-          label={isWarm ? 'Stop warming' : 'Keep warm 3h'}
-          onPress={async () => {
-            const t = await $.clock.now()
-            fails = 0
-            await update($, note, () => null)
-            await update($, pings, () => 0)
-            await update($, warmUntil, () => (isWarm ? null : t + WARM_WINDOW_MS))
-            await arm($)
-          }}
-        />
+        {(isWarm ? [0] : WARM_HOURS).map(hours => (
+          <Button
+            key={`warm${hours}`}
+            label={isWarm ? 'Stop warming' : `Keep warm ${hours}h`}
+            onPress={async () => {
+              const t = await $.clock.now()
+              fails = 0
+              await update($, note, () => null)
+              await update($, pings, () => 0)
+              await update($, warmUntil, () => (isWarm ? null : t + hours * 60 * 60 * 1000))
+              await arm($)
+            }}
+          />
+        ))}
         {willCompact || (skipped && left > 0) ? (
           <Button
             key="compact"

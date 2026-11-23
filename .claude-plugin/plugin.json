@@ -1,6 +1,6 @@
 {
   "name": "cache-timer",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Band above the prompt: time since last reply, time left on the 1h prompt cache, auto-compact before the cache expires, and a button to keep the cache warm",
   "author": { "name": "suenot" },
   "license": "MIT",

@@ -38,14 +38,14 @@ pressing **Auto-compact** undoes it. The thresholds are `COMPACT_AFTER_MS` and
 
 ## Keep warm button
 
-The band has a **Keep warm 3h** button. While it is on, the mod sets a single timer for the
+The band has **Keep warm 3h**, **6h** and **12h** buttons. While it is on, the mod sets a single timer for the
 moment the cache is 50 minutes old (no polling; the timer is reset after every
 turn). If no turn is running then, it sends one tool-less fork over the session transcript (`$.model.fork`), which reads
 the cached prefix and so restarts the 1-hour lifetime. The band then shows
 `keeping warm until HH:MM (N pings)` and the button becomes **Stop warming**.
 
 Pings spend tokens: each one re-reads the whole context from the cache, so a
-3-hour window means about three pings. The mod stops by itself when the window
+3-hour window means about three pings, 6 hours about six, 12 hours about twelve. The mod stops by itself when the window
 ends, when a ping finds the cache already cold (read is zero, or the write is
 10% or more of the read), after 3 failed pings in a row, or after `/clear`.
 Windows are per session and are forgotten when Claude Code restarts. Pressing
