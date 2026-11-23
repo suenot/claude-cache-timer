@@ -17,6 +17,21 @@ It works in the open chat only; it does not change the session list.
 The 1-hour TTL is a constant (`TTL_MS`) in `hooks/register.tsx`. Set it to
 5 minutes if your session uses the short cache.
 
+## Auto-compact (always on)
+
+When the conversation sits idle and the cache reaches 55 minutes, the mod runs
+`/compact` by itself (`$.session.compact`), while the cache is still warm. The
+summary request reads the cached prefix cheaply, and the next prompt pays for a
+short summary instead of rewriting the whole context at full price after the
+cache expires. The band shows `auto-compact in Nm` until then and
+`Auto-compacted at HH:MM (Nk to Mk tokens)` afterwards.
+
+It runs once per idle period and is skipped while a turn runs, while Keep warm
+is on (warming wins; compaction resumes after the window ends), when the cache
+has already expired, and when the context is under 30k tokens. There is no
+setting to turn it off. The thresholds are `COMPACT_AFTER_MS` and
+`MIN_COMPACT_TOKENS` in `hooks/register.tsx`.
+
 ## Keep warm button
 
 The band has a **Keep warm 3h** button. While it is on, the mod sets a single timer for the

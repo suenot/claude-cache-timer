@@ -5,6 +5,7 @@ declare module 'claude-code' {
       warmUntil: number | null
       pings: number
       note: string | null
+      compactedAt: number | null
     }
   }
 }
