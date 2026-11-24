@@ -9,7 +9,7 @@ test('a model step of the main loop restarts the lastAt clock', async ($, on) =>
   })
   on('ui.invalidate', () => ({ value: undefined }))
   on('turn.step', async function* () {
-    return { turnId: 't', index: 0, answer: 'hi', toolUses: [] }
+    return { turnId: 't', index: 0, answer: 'hi', toolUses: [], stopReason: 'end_turn' as const, usage: null }
   })
 
   // turn.step streams: the hook only runs once the stream is read.
