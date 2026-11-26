@@ -1,6 +1,6 @@
 # claude-cache-timer
 
-Site: https://claude-cache-timer.vercel.app
+Site: https://claude-cache-timer.suenot.com
 
 A Claude Code mod that draws a band above the prompt showing how long ago the
 last reply finished and how much time is left before the 1-hour prompt cache
